@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Air Separation - Fractional Distillation Simulation</title>
+  <style>
+    :root {
+      --bg: #030712;
+      --card-bg: #0b1120;
+      --accent: #38bdf8;
+      --text: #f3f4f6;
+      --success: #10b981;
+      --danger: #ef4444;
+      --border: #1e293b;
+      --h2o: #38bdf8;
+      --co2: #fb923c;
+      --n2: #00f2ff;
+      --ar: #c084fc;
+      --o2: #f43f5e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 12px; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    
+    header { text-align: center; margin-bottom: 12px; }
+    h1 { font-size: 1.55rem; color: var(--accent); margin-bottom: 4px; text-shadow: 0 0 12px rgba(56, 189, 248, 0.35); }
+    p.subtitle { color: #64748b; font-size: 0.86rem; }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 16px;
+      width: 100%;
+      max-width: 1180px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    @media (max-width: 960px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Left Drawer */
+    .token-panel {
+      background: rgba(3, 7, 18, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel-heading {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .gas-token {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      cursor: grab;
+      user-select: none;
+      transition: all 0.2s ease;
+    }
+    .gas-token:hover { border-color: var(--accent); background: #1e293b; }
+    .gas-token:active { cursor: grabbing; }
+    .gas-token.selected { border-color: var(--accent); background: rgba(56, 189, 248, 0.15); box-shadow: 0 0 10px rgba(56,189,248,0.3); }
+    .gas-token.placed { opacity: 0.25; cursor: not-allowed; pointer-events: none; border-color: var(--success); }
+    .token-name { font-weight: 700; font-size: 0.92rem; color: #fff; }
+
+    /* Interactive Viewport */
+    .viewport {
+      position: relative;
+      background: #02050e;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      width: 100%;
+      height: 560px;
+      overflow: hidden;
+    }
+    #simCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+
+    /* Target Drop Areas */
+    .drop-target {
+      position: absolute;
+      z-index: 2;
+      border: 1px dashed #475569;
+      border-radius: 8px;
+      background: rgba(11, 17, 32, 0.85);
+      backdrop-filter: blur(4px);
+      padding: 6px;
+      text-align: center;
+      transition: all 0.25s ease;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 125px;
+      height: 65px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .drop-target.drag-over { border-color: var(--accent); background: rgba(56, 189, 248, 0.2); transform: scale(1.05); }
+    .drop-target.correct { border-style: solid; border-color: var(--success); background: rgba(16, 185, 129, 0.15); }
+    .drop-target.error { border-style: solid; border-color: var(--danger); animation: shake 0.4s ease; }
+
+    #zone-H2O { top: 220px; left: 15px; }
+    #zone-CO2 { top: 190px; left: 325px; }
+    #zone-N2  { top: 25px; right: 20px; width: 140px; }
+    #zone-Ar  { top: 240px; right: 20px; width: 140px; }
+    #zone-O2  { bottom: 45px; right: 20px; width: 140px; }
+
+    .target-title { font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+    .target-status { font-size: 0.8rem; font-weight: 700; color: #94a3b8; margin-top: 3px; }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-6px); }
+      75% { transform: translateX(6px); }
+    }
+
+    /* Controls Panel */
+    .control-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .status-msg {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #64748b;
+    }
+    .status-msg.active { color: var(--success); }
+    .btn-reset {
+      background: #0f172a;
+      color: #fff;
+      border: 1px solid #334155;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-reset:hover { background: #1e293b; border-color: #475569; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Liquid Air Separation & Distillation Plant</h1>
+  <p class="subtitle">Assign all 5 atmospheric substances to their correct separation chambers to start the plant.</p>
+</header>
+
+<div class="main-grid">
+  <!-- Gas Tokens Panel -->
+  <div class="token-panel">
+    <div class="panel-heading">Substances</div>
+    <div id="tokenContainer" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
+
+  <!-- Distillation Visual Plant Viewport -->
+  <div class="viewport" id="viewport">
+    <canvas id="simCanvas" width="880" height="560"></canvas>
+
+    <!-- Drop Zones -->
+    <div class="drop-target" id="zone-H2O" data-target="H2O">
+      <div class="target-title">Pre-Cooler Trap</div>
+      <div class="target-status">Empty</div>
+    </div>
+
+    <div class="drop-target" id="zone-CO2" data-target="CO2">
+      <div class="target-title">Cold Scrubber</div>
+      <div class="target-status">Empty</div>
+    </div>
+
+    <div class="drop-target" id="zone-N2" data-target="N2">
+      <div class="target-title">Column Top Exit</div>
+      <div class="target-status">Empty</div>
+    </div>
+
+    <div class="drop-target" id="zone-Ar" data-target="Ar">
+      <div class="target-title">Middle Tray Draw</div>
+      <div class="target-status">Empty</div>
+    </div>
+
+    <div class="drop-target" id="zone-O2" data-target="O2">
+      <div class="target-title">Bottom Gas Outlet</div>
+      <div class="target-status">Empty</div>
+    </div>
+  </div>
+
+  <!-- Bottom Control Bar -->
+  <div class="control-bar">
+    <div class="status-msg" id="statusMsg">Drag elements or select and click on target zones.</div>
+    <button class="btn-reset" id="resetBtn">Reset Apparatus</button>
+  </div>
+</div>
+
+<script>
+  const gasData = [
+    { id: 'H2O', name: 'Water Vapour (H₂O)',  color: '#38bdf8' },
+    { id: 'CO2', name: 'Carbon Dioxide (CO₂)', color: '#fb923c' },
+    { id: 'N2',  name: 'Nitrogen (N₂)',         color: '#00f2ff' },
+    { id: 'Ar',  name: 'Argon (Ar)',            color: '#c084fc' },
+    { id: 'O2',  name: 'Oxygen (O₂)',           color: '#f43f5e' }
+  ];
+
+  let selectedGas = null;
+  let matchesCount = 0;
+  let plantRunning = false;
+  let particles = [];
+  
+  // Storage for all accumulated frozen solids resting on the floor
+  let trappedSolidsFloor = [];
+
+  const tokenContainer = document.getElementById('tokenContainer');
+  const zones = document.querySelectorAll('.drop-target');
+  const statusMsg = document.getElementById('statusMsg');
+  const canvas = document.getElementById('simCanvas');
+  const ctx = canvas.getContext('2d');
+
+  function initSimulation() {
+    tokenContainer.innerHTML = '';
+    matchesCount = 0;
+    selectedGas = null;
+    plantRunning = false;
+    particles = [];
+    trappedSolidsFloor = [];
+    statusMsg.textContent = 'Drag elements or select and click on target zones.';
+    statusMsg.className = 'status-msg';
+
+    zones.forEach(zone => {
+      zone.classList.remove('correct', 'error', 'drag-over');
+      zone.querySelector('.target-status').textContent = 'Empty';
+      zone.querySelector('.target-status').style.color = '#94a3b8';
+    });
+
+    const shuffled = [...gasData].sort(() => Math.random() - 0.5);
+    shuffled.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'gas-token';
+      card.draggable = true;
+      card.dataset.id = item.id;
+      card.innerHTML = `<span class="token-name">${item.name}</span>`;
+
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', item.id);
+        card.classList.add('selected');
+      });
+      card.addEventListener('dragend', () => card.classList.remove('selected'));
+
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.gas-token').forEach(c => c.classList.remove('selected'));
+        selectedGas = item.id;
+        card.classList.add('selected');
+        statusMsg.textContent = `Selected ${item.name}. Choose its destination on the schematic.`;
+      });
+
+      tokenContainer.appendChild(card);
+    });
+
+    drawStaticPlant();
+  }
+
+  // Drop target listeners
+  zones.forEach(zone => {
+    zone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      zone.classList.add('drag-over');
+    });
+    zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+    
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      zone.classList.remove('drag-over');
+      const gasId = e.dataTransfer.getData('text/plain');
+      evaluatePlacement(gasId, zone);
+    });
+
+    zone.addEventListener('click', () => {
+      if (selectedGas) {
+        evaluatePlacement(selectedGas, zone);
+        selectedGas = null;
+      }
+    });
+  });
+
+  function evaluatePlacement(gasId, zone) {
+    const targetId = zone.dataset.target;
+    const gas = gasData.find(g => g.id === gasId);
+    const cardEl = document.querySelector(`.gas-token[data-id="${gasId}"]`);
+
+    if (gasId === targetId) {
+      zone.classList.add('correct');
+      zone.querySelector('.target-status').textContent = gas.name;
+      zone.querySelector('.target-status').style.color = '#34d399';
+
+      if (cardEl) cardEl.classList.add('placed');
+      matchesCount++;
+      statusMsg.textContent = `✅ Correct! ${gas.name} successfully assigned.`;
+
+      if (matchesCount === gasData.length) {
+        statusMsg.className = 'status-msg active';
+        statusMsg.textContent = '🎉 All components verified! Fractional distillation plant active.';
+        plantRunning = true;
+        animatePlant();
+      }
+    } else {
+      zone.classList.add('error');
+      setTimeout(() => zone.classList.remove('error'), 450);
+      statusMsg.textContent = `❌ Match failed. Re-evaluate temperature coordinates for ${gas.name}.`;
+    }
+  }
+
+  // Draw Apparatus, Pipelines & Tower
+  function drawStaticPlant() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Static Pipeline System
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Air Intake into Pre-cooler top
+    ctx.beginPath();
+    ctx.moveTo(20, 100);
+    ctx.lineTo(160, 100);
+    ctx.stroke();
+
+    // Outflow pipe connecting pre-cooler floor to Water Trap block
+    ctx.beginPath();
+    ctx.moveTo(160, 252);
+    ctx.lineTo(140, 252);
+    ctx.stroke();
+
+    // Outflow pipe connecting pre-cooler floor to Carbon Dioxide block
+    ctx.beginPath();
+    ctx.moveTo(310, 222);
+    ctx.lineTo(325, 222);
+    ctx.stroke();
+
+    // Cleaned dry air piping down to liquefaction compressor
+    ctx.beginPath();
+    ctx.moveTo(235, 300);
+    ctx.lineTo(235, 445);
+    ctx.stroke();
+
+    // Compressor output to distillation column base
+    ctx.beginPath();
+    ctx.moveTo(340, 480);
+    ctx.lineTo(470, 480);
+    ctx.stroke();
+
+    // Outlet Pipes from Column
+    // Nitrogen (Top)
+    ctx.beginPath();
+    ctx.moveTo(525, 55);
+    ctx.lineTo(525, 25);
+    ctx.lineTo(720, 25);
+    ctx.lineTo(720, 58);
+    ctx.stroke();
+
+    // Argon (Middle)
+    ctx.beginPath();
+    ctx.moveTo(580, 272);
+    ctx.lineTo(720, 272);
+    ctx.stroke();
+
+    // Oxygen (Bottom Gas Exit)
+    ctx.beginPath();
+    ctx.moveTo(580, 480);
+    ctx.lineTo(720, 480);
+    ctx.stroke();
+
+    // 2. Pre-cooling Module (-80 °C)
+    const pcX = 160, pcY = 70, pcW = 150, pcH = 230;
+    ctx.fillStyle = '#0a192f';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.fillRect(pcX, pcY, pcW, pcH);
+    ctx.strokeRect(pcX, pcY, pcW, pcH);
+
+    // Cooling coil system inside
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(pcX + 15, pcY + 40);
+    for (let cy = pcY + 40; cy <= pcY + 160; cy += 18) {
+      ctx.lineTo(pcX + pcW - 15, cy);
+      ctx.lineTo(pcX + 15, cy + 9);
+    }
+    ctx.stroke();
+
+    // Pre-cooler Floor / Sump Basin (where all H2O and CO2 particles settle)
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    ctx.fillRect(pcX + 4, pcY + pcH - 45, pcW - 8, 41);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(pcX + 4, pcY + pcH - 45);
+    ctx.lineTo(pcX + pcW - 4, pcY + pcH - 45);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Pre-cooler Temperature (-80 °C)
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText('-80 °C', pcX + 50, pcY + 24);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px sans-serif';
+    ctx.fillText('PRE-COOLING CHAMBER', pcX + 22, pcY + 38);
+
+    // 3. Liquefaction Compressor (-200 °C)
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    ctx.fillRect(180, 445, 120, 70);
+    ctx.strokeRect(180, 445, 120, 70);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('LIQUEFACTION UNIT', 188, 475);
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('200 atm / -200 °C', 194, 492);
+
+    // 4. Fractionating Column
+    const towerX = 470;
+    const towerY = 55;
+    const towerW = 110;
+    const towerH = 435;
+
+    // Gradient background
+    const grad = ctx.createLinearGradient(0, towerY, 0, towerY + towerH);
+    grad.addColorStop(0, 'rgba(0, 242, 255, 0.22)');
+    grad.addColorStop(0.5, 'rgba(192, 132, 252, 0.20)');
+    grad.addColorStop(1, 'rgba(244, 63, 94, 0.25)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(towerX, towerY, towerW, towerH);
+
+    // Outer Shell
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(towerX, towerY, towerW, towerH);
+
+    // Bubble Plates / Trays
+    for (let y = towerY + 35; y < towerY + towerH - 25; y += 38) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(towerX + 6, y);
+      ctx.lineTo(towerX + towerW - 6, y);
+      ctx.stroke();
+
+      // Bubble caps
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      for (let bx = towerX + 18; bx < towerX + towerW - 10; bx += 22) {
+        ctx.beginPath();
+        ctx.arc(bx, y - 4, 3, Math.PI, 0, false);
+        ctx.fill();
+      }
+    }
+
+    // STRICTLY TOWER TEMPERATURE INDICATIONS ONLY
+    ctx.font = 'bold 13px monospace';
+    ctx.fillStyle = '#00f2ff';
+    ctx.fillText('-196 °C', towerX + 25, towerY + 28);
+
+    ctx.fillStyle = '#c084fc';
+    ctx.fillText('-186 °C', towerX + 25, towerY + 225);
+
+    ctx.fillStyle = '#f43f5e';
+    ctx.fillText('-183 °C', towerX + 25, towerY + towerH - 18);
+
+    // Render static trapped solid particles accumulating at the bottom floor
+    drawTrappedSolids();
+  }
+
+  // Draw trapped solid ice crystals and dry ice pieces resting on the pre-cooler floor
+  function drawTrappedSolids() {
+    trappedSolidsFloor.forEach(p => {
+      if (p.type === 'H2O') {
+        ctx.strokeStyle = '#bae6fd';
+        ctx.lineWidth = 1.2;
+        drawSnowflake(p.x, p.y, 4);
+      } else if (p.type === 'CO2') {
+        ctx.fillStyle = '#ffedd5';
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth = 1;
+        ctx.fillRect(p.x - 4, p.y - 3, 9, 6);
+        ctx.strokeRect(p.x - 4, p.y - 3, 9, 6);
+      }
+    });
+  }
+
+  function drawSnowflake(x, y, r) {
+    for (let a = 0; a < 3; a++) {
+      const angle = (a * Math.PI) / 3;
+      ctx.beginPath();
+      ctx.moveTo(x - Math.cos(angle) * r, y - Math.sin(angle) * r);
+      ctx.lineTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+      ctx.stroke();
+    }
+  }
+
+  // Path Waypoints
+  const intakePath = [
+    { x: 20, y: 100 },
+    { x: 190, y: 100 }
+  ];
+
+  // 100% Water Vapor falls down to the left basin of the pre-cooler floor
+  const h2oToBasinPath = [
+    { x: 190, y: 100 },
+    { x: 195, y: 282 }
+  ];
+
+  // 100% Carbon Dioxide falls down to the right basin of the pre-cooler floor
+  const co2ToBasinPath = [
+    { x: 190, y: 100 },
+    { x: 265, y: 282 }
+  ];
+
+  // Clean, dry air mixture proceeds downward through the pre-cooler center to the compressor
+  const cleanAirBase = [
+    { x: 190, y: 100 },
+    { x: 235, y: 200 },
+    { x: 235, y: 480 },  // Down to Liquefaction unit
+    { x: 470, y: 480 }   // Into Column Sump
+  ];
+
+  const n2Path = [
+    ...cleanAirBase,
+    { x: 525, y: 480 },
+    { x: 525, y: 25 },   // Column Top
+    { x: 720, y: 25 },
+    { x: 720, y: 58 }    // N2 Collection Tank
+  ];
+
+  const arPath = [
+    ...cleanAirBase,
+    { x: 525, y: 480 },
+    { x: 525, y: 272 },  // Column Middle Tray
+    { x: 720, y: 272 }   // Ar Collection Tank
+  ];
+
+  // Oxygen boils off from the sump and exits as gas
+  const o2Path = [
+    ...cleanAirBase,
+    { x: 525, y: 480 },  // Column Sump / Vaporizing Zone
+    { x: 720, y: 480 }   // O2 Gas Exit
+  ];
+
+  function getPathLength(points) {
+    let len = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      len += Math.hypot(points[i+1].x - points[i].x, points[i+1].y - points[i].y);
+    }
+    return len;
+  }
+
+  function getPointAlongPath(points, distance) {
+    let covered = 0;
+    for (let i = 0; i < points.length - 1; i++) {
+      const segLen = Math.hypot(points[i+1].x - points[i].x, points[i+1].y - points[i].y);
+      if (covered + segLen >= distance) {
+        const ratio = (distance - covered) / segLen;
+        return {
+          x: points[i].x + (points[i+1].x - points[i].x) * ratio,
+          y: points[i].y + (points[i+1].y - points[i].y) * ratio
+        };
+      }
+      covered += segLen;
+    }
+    return points[points.length - 1];
+  }
+
+  // Animation Loop
+  function animatePlant() {
+    if (!plantRunning) return;
+
+    // Spawn stream particles
+    if (Math.random() < 0.45) {
+      const roll = Math.random();
+      let type, color, path, isTrapped = false;
+
+      if (roll < 0.22) {
+        type = 'H2O'; color = '#38bdf8';
+        path = [...intakePath, ...h2oToBasinPath];
+        isTrapped = true;
+      } else if (roll < 0.40) {
+        type = 'CO2'; color = '#fb923c';
+        path = [...intakePath, ...co2ToBasinPath];
+        isTrapped = true;
+      } else if (roll < 0.65) {
+        type = 'N2'; color = '#00f2ff';
+        path = [...intakePath, ...n2Path];
+      } else if (roll < 0.82) {
+        type = 'Ar'; color = '#c084fc';
+        path = [...intakePath, ...arPath];
+      } else {
+        type = 'O2'; color = '#f43f5e';
+        path = [...intakePath, ...o2Path];
+      }
+
+      particles.push({
+        type, color, path, isTrapped,
+        totalDist: getPathLength(path),
+        dist: 0,
+        speed: 2.2 + Math.random() * 0.8
+      });
+    }
+
+    drawStaticPlant();
+
+    // Move flowing particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.dist += p.speed;
+
+      // Particle reached terminal position
+      if (p.dist >= p.totalDist) {
+        // H2O and CO2 particles are 100% trapped at the floor of the pre-cooling unit
+        if (p.isTrapped && trappedSolidsFloor.length < 45) {
+          const finalPos = p.path[p.path.length - 1];
+          trappedSolidsFloor.push({
+            x: finalPos.x + (Math.random() * 26 - 13),
+            y: 276 + Math.random() * 15,
+            type: p.type
+          });
+        }
+        particles.splice(i, 1);
+        continue;
+      }
+
+      const pos = getPointAlongPath(p.path, p.dist);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // STATE LABELS SHOWN EXCLUSIVELY DURING RUNTIME
+    ctx.font = 'bold 10px monospace';
+    
+    // Pre-Cooler States (Trapped Solids)
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText('❄️ Solid (Ice)', 25, 210);
+
+    ctx.fillStyle = '#fb923c';
+    ctx.fillText('🧊 Solid (Dry Ice)', 330, 180);
+
+    // Text indicating trapped solids at the floor of the pre-cooling unit
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('Trapped Solid Residue', 178, 260);
+
+    // Liquid air entering tower
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('💧 Liquid Air', 185, 528);
+
+    // Distillation Column Fraction States - ALL THREE GAS PRODUCTS
+    ctx.fillStyle = '#00f2ff';
+    ctx.fillText('💨 Gas (Vapour)', 725, 105);
+
+    ctx.fillStyle = '#c084fc';
+    ctx.fillText('💨 Gas (Vapour)', 725, 318);
+
+    // Oxygen collected as gas vapor upon boiling
+    ctx.fillStyle = '#f43f5e';
+    ctx.fillText('💨 Gas (Vapour)', 725, 528);
+
+    requestAnimationFrame(animatePlant);
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', initSimulation);
+
+  initSimulation();
+</script>
+</body>
+</html>
